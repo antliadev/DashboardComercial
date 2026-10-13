@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       .single();
     if (!account) return NextResponse.json({ error: "account not found in organization" }, { status: 403 });
     if (body.stageId) {
-      const { data: stage } = await supabase.from("opportunity_stages").select("id").eq("id", body.stageId).single();
+      const { data: stage } = await supabase.from("opportunity_stages").select("id").eq("id", body.stageId).eq("organization_id", membership.organization_id).maybeSingle();
       if (!stage) return NextResponse.json({ error: "stage not found" }, { status: 403 });
     }
     const { data, error } = await supabase.from("opportunities").upsert({
@@ -25,10 +25,18 @@ export async function POST(request: Request) {
       next_action: body.nextAction, next_action_due_on: body.nextActionDueOn ?? null,
       evidence_level: body.evidenceLevel, idempotency_key: body.idempotencyKey, source: "dashboard",
       created_by: user.id, updated_by: user.id
-    }, { onConflict: "organization_id,idempotency_key", ignoreDuplicates: true }).select().single();
+    }, { onConflict: "organization_id,idempotency_key", ignoreDuplicates: true }).select().maybeSingle();
     if (error) {
       console.error("[api/opportunities] upsert failed", error.message);
       return NextResponse.json({ error: "conflict" }, { status: 409 });
+    }
+    if (!data) {
+      const { data: existing } = await supabase.from("opportunities")
+        .select("*")
+        .eq("organization_id", membership.organization_id)
+        .eq("idempotency_key", body.idempotencyKey)
+        .maybeSingle();
+      return NextResponse.json({ data: existing, deduplicated: true }, { status: 200 });
     }
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {

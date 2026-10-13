@@ -37,6 +37,7 @@ export interface OpportunityRow {
   probability: number;
   expected_close_on: string | null;
   next_action: string | null;
+  next_action_due_on: string | null;
   owner_name: string | null;
   account: { id: string; canonical_name: string } | null;
   stage: { name: string; is_closed: boolean } | null;

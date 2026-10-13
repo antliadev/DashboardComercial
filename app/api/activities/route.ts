@@ -12,7 +12,8 @@ export async function POST(request: Request) {
         .from("channels")
         .select("id")
         .eq("id", body.channelId)
-        .single();
+        .eq("organization_id", membership.organization_id)
+        .maybeSingle();
       if (!channel) return NextResponse.json({ error: "channel not found" }, { status: 403 });
     }
     const { data, error } = await supabase.from("activity_batches").upsert({
@@ -21,10 +22,19 @@ export async function POST(request: Request) {
       contacts_count: body.contacts, invites_count: body.invites, messages_count: body.messages,
       replies_count: body.replies, conversations_count: body.conversations, meetings_count: body.meetings,
       opportunities_count: body.opportunities, notes: body.note, evidence_level: body.evidenceLevel, source: "dashboard"
-    }, { onConflict: "organization_id,idempotency_key", ignoreDuplicates: true }).select().single();
+    }, { onConflict: "organization_id,idempotency_key", ignoreDuplicates: true }).select().maybeSingle();
     if (error) {
       console.error("[api/activities] upsert failed", error.message);
       return NextResponse.json({ error: "conflict" }, { status: 409 });
+    }
+    // ignoreDuplicates retorna 0 linhas quando a key já existe — idempotência real: devolve o existente com 200.
+    if (!data) {
+      const { data: existing } = await supabase.from("activity_batches")
+        .select("*")
+        .eq("organization_id", membership.organization_id)
+        .eq("idempotency_key", body.idempotencyKey)
+        .maybeSingle();
+      return NextResponse.json({ data: existing, deduplicated: true }, { status: 200 });
     }
     return NextResponse.json({ data }, { status: 201 });
   } catch (error) {
