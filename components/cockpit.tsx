@@ -13,10 +13,11 @@ import {
   sumActivities,
 } from "@/lib/metrics";
 import { neutralizeCsv } from "@/lib/validation";
+import { IngestionScreen } from "@/components/ingestion-screen";
 import type { AccountRow, ActivityRow, ContactRow, HomologationRow, OpportunityRow } from "@/lib/database.types";
 
 type Data = { contacts: ContactRow[]; activities: ActivityRow[]; opportunities: OpportunityRow[]; accounts: AccountRow[]; homologations: HomologationRow[]; error: string | null; updatedAt: string };
-const tabs = ["Visão diária", "Dia anterior", "Prospecção", "Homologação", "Reunião executiva", "Pipeline", "Contas prioritárias"] as const;
+const tabs = ["Visão diária", "Dia anterior", "Prospecção", "Homologação", "Reunião executiva", "Pipeline", "Contas prioritárias", "Inserir dados"] as const;
 type Tab = (typeof tabs)[number];
 const PAGE_SIZE = 50;
 const homologationLabels: Record<HomologationRow["status"], string> = {
@@ -672,6 +673,12 @@ export function Cockpit({ initialData }: { initialData: Data }) {
               </div>
               {accountsEnriched.length === 0 && <Empty text="Nenhuma conta encontrada." />}
               <p className="hint" role="status">{accountsEnriched.length} conta(s) para “{deferredAccountQuery || "todas"}”, ordenadas por pipeline.</p>
+            </div>
+          )}
+
+          {tab === "Inserir dados" && (
+            <div role="tabpanel" id={`panel-${activeSlug}`} aria-label="Inserir dados" tabIndex={0}>
+              <IngestionScreen />
             </div>
           )}
         </section>
