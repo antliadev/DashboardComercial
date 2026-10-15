@@ -187,7 +187,8 @@ export async function POST(request: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: "Dados inválidos", details: error.flatten() }, { status: 400 });
     }
-    console.error("[api/ingest] error:", error);
-    return NextResponse.json({ error: "Falha interna ao processar registro." }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Erro desconhecido";
+    console.error("[api/ingest] error:", message);
+    return NextResponse.json({ error: "Falha interna ao processar registro", message }, { status: 500 });
   }
 }
