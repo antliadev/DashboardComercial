@@ -86,35 +86,95 @@ function loadSeedData(): DashboardData {
   }
 }
 
-async function getDashboardDataFromFirestore(orgSlug: string): Promise<DashboardData | null> {
-  const db = getAdminDb();
-  const orgRef = db.collection("organizations").doc(orgSlug);
-  const orgSnap = await orgRef.get();
+function parseFirestoreValue(val: Record<string, unknown> | undefined): unknown {
+  if (!val) return null;
+  if ("stringValue" in val) return val.stringValue;
+  if ("integerValue" in val) return parseInt(val.integerValue as string, 10);
+  if ("doubleValue" in val) return parseFloat(val.doubleValue as string);
+  if ("booleanValue" in val) return val.booleanValue;
+  if ("nullValue" in val) return null;
+  return null;
+}
 
-  if (!orgSnap.exists) {
+function parseFirestoreDoc(doc: { name: string; fields?: Record<string, Record<string, unknown>> }): Record<string, unknown> {
+  const fields = doc.fields || {};
+  const res: Record<string, unknown> = { id: doc.name.split("/").pop() };
+  for (const [k, v] of Object.entries(fields)) {
+    res[k] = parseFirestoreValue(v);
+  }
+  return res;
+}
+
+async function fetchFirestoreCollectionRest(collection: string, maxPages = 5): Promise<Record<string, unknown>[]> {
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAsTxkZJmchyj6u51QY4PPdjC3GiBnnAWw";
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "dashboard-comercial-a1e49";
+  const orgSlug = process.env.ORGANIZATION_SLUG || "antlia";
+
+  const allDocs: Record<string, unknown>[] = [];
+  let pageToken = "";
+  let pages = 0;
+
+  do {
+    pages++;
+    const url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/organizations/${orgSlug}/${collection}?key=${apiKey}&pageSize=300${pageToken ? `&pageToken=${pageToken}` : ""}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) break;
+    const data = (await res.json()) as { documents?: { name: string; fields?: Record<string, Record<string, unknown>> }[]; nextPageToken?: string };
+    if (data.documents) {
+      for (const d of data.documents) {
+        allDocs.push(parseFirestoreDoc(d));
+      }
+    }
+    pageToken = data.nextPageToken || "";
+  } while (pageToken && pages < maxPages);
+
+  return allDocs;
+}
+
+async function getDashboardDataFromFirestore(orgSlug: string): Promise<DashboardData | null> {
+  const [rawContacts, rawActivities] = await Promise.all([
+    fetchFirestoreCollectionRest("contacts"),
+    fetchFirestoreCollectionRest("activities"),
+  ]);
+
+  if (rawContacts.length === 0 && rawActivities.length === 0) {
     return null;
   }
 
-  const [contactsSnap, activitiesSnap, opportunitiesSnap, accountsSnap, homologationsSnap] = await Promise.all([
-    orgRef.collection("contacts").orderBy("updated_at", "desc").limit(1000).get(),
-    orgRef.collection("activities").orderBy("effective_on", "desc").limit(200).get(),
-    orgRef.collection("opportunities").orderBy("updated_at", "desc").limit(200).get(),
-    orgRef.collection("accounts").orderBy("canonical_name").limit(1000).get(),
-    orgRef.collection("homologations").orderBy("updated_at", "desc").limit(500).get(),
-  ]);
+  const contacts: ContactRow[] = rawContacts.map((raw) => ({
+    id: String(raw.id || ""),
+    name: String(raw.name || ""),
+    role_title: raw.role_title ? String(raw.role_title) : null,
+    status_raw: raw.status_raw ? String(raw.status_raw) : null,
+    linkedin_url: raw.linkedin_url ? String(raw.linkedin_url) : null,
+    last_contact_at: raw.last_contact_at ? String(raw.last_contact_at) : null,
+    owner_name: raw.owner_name ? String(raw.owner_name) : null,
+    account: raw.account_name ? { id: String(raw.account_name), canonical_name: String(raw.account_name) } : null,
+  }));
 
-  const contacts = contactsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ContactRow));
-  const activities = activitiesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as ActivityRow));
-  const opportunities = opportunitiesSnap.docs.map((d) => ({ id: d.id, ...d.data() } as OpportunityRow));
-  const accounts = accountsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AccountRow));
-  const homologations = homologationsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as HomologationRow));
+  const activities: ActivityRow[] = rawActivities.map((raw) => ({
+    id: String(raw.id || ""),
+    effective_on: String(raw.effective_on || ""),
+    contacts_count: Number(raw.contacts_count || 0),
+    invites_count: Number(raw.invites_count || 0),
+    messages_count: Number(raw.messages_count || 0),
+    replies_count: Number(raw.replies_count || 0),
+    conversations_count: Number(raw.conversations_count || 0),
+    meetings_count: Number(raw.meetings_count || 0),
+    opportunities_count: Number(raw.opportunities_count || 0),
+    owner_name: raw.owner_name ? String(raw.owner_name) : null,
+    channel: { name: raw.channel_name ? String(raw.channel_name) : "LinkedIn" },
+  }));
+
+  // Combinar com seed para oportunidades, contas e homologações caso ainda não populadas no Firestore
+  const seed = loadSeedData();
 
   return {
     contacts,
     activities,
-    opportunities,
-    accounts,
-    homologations,
+    opportunities: seed.opportunities,
+    accounts: seed.accounts,
+    homologations: seed.homologations,
     error: null,
     updatedAt: new Date().toISOString(),
   };
