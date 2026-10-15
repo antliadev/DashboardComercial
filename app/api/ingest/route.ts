@@ -257,3 +257,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Falha interna ao processar registro", message }, { status: 500 });
   }
 }
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    const collection = searchParams.get("collection") || "contacts";
+
+    if (id) {
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/organizations/${ORG_SLUG}/${collection}/${encodeURIComponent(id)}?key=${FIREBASE_API_KEY}`;
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        return NextResponse.json({ found: false, error: `Registro ${id} não encontrado na coleção ${collection}` }, { status: 404 });
+      }
+      const data = await res.json();
+      return NextResponse.json({ found: true, id, data });
+    }
+
+    // Retorna status e metadados da rota
+    return NextResponse.json({
+      status: "operational",
+      database: "Firestore (Google Cloud)",
+      project: PROJECT_ID,
+      collection,
+      message: "Utilize POST para inserir dados ou passe ?id=<ID>&collection=contacts para consultar.",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Erro na leitura";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
