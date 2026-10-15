@@ -17,3 +17,4 @@ tsconfig.tsbuildinfo
 .openai/
 server.mjs
 build_static_snapshot.py
+REf/
