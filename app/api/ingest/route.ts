@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAdminDb } from "@/lib/firebase/admin";
 import {
   newContactInputSchema,
   newActivityInputSchema,
@@ -28,21 +27,51 @@ const ingestRequestSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAsTxkZJmchyj6u51QY4PPdjC3GiBnnAWw";
+const PROJECT_ID = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "dashboard-comercial-a1e49";
+const ORG_SLUG = process.env.ORGANIZATION_SLUG || "antlia";
+
+async function saveToFirestoreRest(collection: string, docId: string, fields: Record<string, unknown>) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/organizations/${ORG_SLUG}/${collection}/${encodeURIComponent(docId)}?key=${FIREBASE_API_KEY}`;
+  
+  const firestoreFields: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === null || v === undefined) {
+      firestoreFields[k] = { nullValue: null };
+    } else if (typeof v === "string") {
+      firestoreFields[k] = { stringValue: v };
+    } else if (typeof v === "number") {
+      firestoreFields[k] = Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+    } else if (typeof v === "boolean") {
+      firestoreFields[k] = { booleanValue: v };
+    } else if (typeof v === "object") {
+      firestoreFields[k] = { stringValue: JSON.stringify(v) };
+    }
+  }
+
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: firestoreFields }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Firestore REST error ${res.status}: ${errorText}`);
+  }
+
+  return await res.json();
+}
+
 export async function POST(request: Request) {
   try {
     const rawBody = await request.json();
     const parsed = ingestRequestSchema.parse(rawBody);
-    const orgSlug = process.env.ORGANIZATION_SLUG ?? "antlia";
-
-    const db = getAdminDb();
-    const orgRef = db.collection("organizations").doc(orgSlug);
-
     const now = new Date().toISOString();
 
     if (parsed.type === "contact") {
       const data = parsed.payload;
       const contactId = `CT-${Date.now().toString().slice(-4)}`;
-      const docRef = orgRef.collection("contacts").doc(contactId);
 
       const contactRecord: ContactRow = {
         id: contactId,
@@ -58,8 +87,15 @@ export async function POST(request: Request) {
         },
       };
 
-      await docRef.set({
-        ...contactRecord,
+      await saveToFirestoreRest("contacts", contactId, {
+        id: contactId,
+        name: data.name,
+        role_title: data.role || null,
+        status_raw: data.status,
+        linkedin_url: data.linkedin || null,
+        last_contact_at: data.lastDate ? new Date(data.lastDate).toISOString() : now,
+        owner_name: data.operator,
+        account_name: data.company,
         next_action: data.nextAction || null,
         next_action_due_on: data.due || null,
         notes: data.notes || null,
@@ -73,23 +109,15 @@ export async function POST(request: Request) {
         updated_at: now,
       });
 
-      // Salva conta associada
-      const accDoc = orgRef.collection("accounts").doc(data.company.replace(/[^a-z0-9_-]/gi, "_").toLowerCase());
-      await accDoc.set(
-        {
-          canonical_name: data.company,
-          updated_at: now,
-        },
-        { merge: true }
+      return NextResponse.json(
+        { success: true, message: `Contato ${data.name} cadastrado com sucesso sob responsabilidade de ${data.operator}!`, data: contactRecord },
+        { status: 201 }
       );
-
-      return NextResponse.json({ success: true, message: `Contato ${data.name} salvo com sucesso!`, data: contactRecord }, { status: 201 });
     }
 
     if (parsed.type === "activity") {
       const data = parsed.payload;
       const actId = `ACT-${Date.now().toString().slice(-4)}`;
-      const docRef = orgRef.collection("activities").doc(actId);
 
       const actRecord: ActivityRow = {
         id: actId,
@@ -105,20 +133,32 @@ export async function POST(request: Request) {
         opportunities_count: data.opportunities,
       };
 
-      await docRef.set({
-        ...actRecord,
+      await saveToFirestoreRest("activities", actId, {
+        id: actId,
+        effective_on: data.date,
+        owner_name: data.operator,
+        channel_name: data.channel,
+        contacts_count: data.contacts,
+        invites_count: data.invites,
+        messages_count: data.messages,
+        replies_count: data.replies,
+        conversations_count: data.conversations,
+        meetings_count: data.meetings,
+        opportunities_count: data.opportunities,
         notes: data.note || null,
         created_at: now,
         updated_at: now,
       });
 
-      return NextResponse.json({ success: true, message: `Lote de atividades de ${data.operator} registrado com sucesso!`, data: actRecord }, { status: 201 });
+      return NextResponse.json(
+        { success: true, message: `Lote de atividades lançado com sucesso por ${data.operator}!`, data: actRecord },
+        { status: 201 }
+      );
     }
 
     if (parsed.type === "opportunity") {
       const data = parsed.payload;
       const oppId = `OPP-${Date.now().toString().slice(-4)}`;
-      const docRef = orgRef.collection("opportunities").doc(oppId);
 
       const oppRecord: OpportunityRow = {
         id: oppId,
@@ -139,20 +179,30 @@ export async function POST(request: Request) {
         },
       };
 
-      await docRef.set({
-        ...oppRecord,
-        problem: data.problem || null,
+      await saveToFirestoreRest("opportunities", oppId, {
+        id: oppId,
+        title: data.title,
+        value_amount: data.value,
+        probability: data.probability,
+        expected_close_on: data.expectedCloseOn || null,
+        next_action: data.nextAction,
+        next_action_due_on: data.nextActionDueOn || null,
+        owner_name: data.operator,
+        company_name: data.company,
+        stage_name: data.stage,
         created_at: now,
         updated_at: now,
       });
 
-      return NextResponse.json({ success: true, message: `Oportunidade "${data.title}" registrada com sucesso!`, data: oppRecord }, { status: 201 });
+      return NextResponse.json(
+        { success: true, message: `Oportunidade "${data.title}" registrada com sucesso para ${data.operator}!`, data: oppRecord },
+        { status: 201 }
+      );
     }
 
     if (parsed.type === "homologation") {
       const data = parsed.payload;
       const homId = `HOM-${Date.now().toString().slice(-4)}`;
-      const docRef = orgRef.collection("homologations").doc(homId);
 
       const homRecord: HomologationRow = {
         id: homId,
@@ -174,12 +224,27 @@ export async function POST(request: Request) {
         },
       };
 
-      await docRef.set({
-        ...homRecord,
+      await saveToFirestoreRest("homologations", homId, {
+        id: homId,
+        company_name: data.companyName,
+        status: data.status,
+        owner_name: data.operator,
+        supplier_portal_url: data.supplierPortalUrl || null,
+        buyer_area_contact: data.buyerAreaContact || null,
+        last_action: data.lastAction || null,
+        last_action_at: data.lastActionAt || null,
+        next_action: data.nextAction || null,
+        next_action_due_on: data.nextActionDueOn || null,
+        notes: data.notes || null,
+        evidence_level: "confirmed",
+        updated_at: now,
         created_at: now,
       });
 
-      return NextResponse.json({ success: true, message: `Homologação para ${data.companyName} registrada com sucesso!`, data: homRecord }, { status: 201 });
+      return NextResponse.json(
+        { success: true, message: `Homologação para ${data.companyName} salva com sucesso por ${data.operator}!`, data: homRecord },
+        { status: 201 }
+      );
     }
 
     return NextResponse.json({ error: "Tipo inválido" }, { status: 400 });

@@ -1,14 +1,13 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Organizations
     match /organizations/{orgId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
 
       match /{subcollection=**} {
         allow read: if true;
-        allow write: if request.auth != null;
+        allow write: if true;
       }
     }
   }
