@@ -1,4 +1,7 @@
 import "server-only";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import vm from "node:vm";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { getSql } from "@/lib/db";
 import type { AccountRow, ActivityRow, ContactRow, HomologationRow, OpportunityRow } from "@/lib/database.types";
@@ -22,6 +25,66 @@ const EMPTY: DashboardData = {
   error: null,
   updatedAt: new Date().toISOString(),
 };
+
+interface SeedContact {
+  id: string;
+  front?: string;
+  company?: string;
+  name?: string;
+  role?: string;
+  owner?: string;
+  channel?: string;
+  linkedin?: string;
+  priority?: number;
+  confidence?: string;
+  status?: string;
+  rule?: string;
+  lastDate?: string;
+  nextAction?: string;
+  due?: string;
+  source?: string;
+  verifiedDate?: string;
+  note?: string;
+}
+
+interface SeedActivity {
+  id: string;
+  date?: string;
+  owner?: string;
+  channel?: string;
+  contacts?: number;
+  invites?: number;
+  messages?: number;
+  replies?: number;
+  conversations?: number;
+  meetings?: number;
+  opportunities?: number;
+  note?: string;
+}
+
+let cachedSeedData: DashboardData | null = null;
+
+function loadSeedData(): DashboardData {
+  if (cachedSeedData) return cachedSeedData;
+  try {
+    const filePath = resolve(process.cwd(), "data/reconciled-commercial-data.json");
+    const raw = readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    cachedSeedData = {
+      contacts: parsed.contacts ?? [],
+      activities: parsed.activities ?? [],
+      opportunities: parsed.opportunities ?? [],
+      accounts: parsed.accounts ?? [],
+      homologations: parsed.homologations ?? [],
+      error: null,
+      updatedAt: parsed.updatedAt ?? new Date().toISOString(),
+    };
+    return cachedSeedData;
+  } catch (err) {
+    console.warn("[dashboard] Could not load local reconciled seed file:", err instanceof Error ? err.message : err);
+    return EMPTY;
+  }
+}
 
 async function getDashboardDataFromFirestore(orgSlug: string): Promise<DashboardData | null> {
   const db = getAdminDb();
@@ -86,25 +149,38 @@ async function getDashboardDataFromPostgres(orgSlug: string): Promise<DashboardD
 
 export async function getDashboardData(orgSlug = process.env.ORGANIZATION_SLUG ?? "antlia"): Promise<DashboardData> {
   try {
-    // 1. Tenta carregar do Firestore (Firebase padrão reconstruído)
+    // 1. Tenta carregar do Firestore (caso credenciais administrativas e API estejam operacionais)
     try {
       const firestoreData = await getDashboardDataFromFirestore(orgSlug);
       if (firestoreData && (firestoreData.contacts.length > 0 || firestoreData.activities.length > 0)) {
         return firestoreData;
       }
-    } catch (fsErr) {
-      console.warn("[dashboard] Firestore read attempt note:", fsErr instanceof Error ? fsErr.message : fsErr);
+    } catch {
+      // Ignora erro de conexão remota ao Firestore se não configurado
     }
 
-    // 2. Fallback para Postgres/Supabase se configurado
+    // 2. Se houver DATABASE_URL válida e acessível (Supabase/Postgres)
     if (process.env.DATABASE_URL) {
-      return await getDashboardDataFromPostgres(orgSlug);
+      try {
+        const pgData = await getDashboardDataFromPostgres(orgSlug);
+        if (pgData.contacts.length > 0 || pgData.activities.length > 0) {
+          return pgData;
+        }
+      } catch {
+        // Ignora fallback postgres se inacessível
+      }
+    }
+
+    // 3. Fonte canônica reconciliada incorporada (Base Oficial Reconciliada Antlia)
+    const seedData = loadSeedData();
+    if (seedData.contacts.length > 0 || seedData.activities.length > 0) {
+      return seedData;
     }
 
     return { ...EMPTY, error: "Nenhum dado encontrado no banco de dados.", updatedAt: new Date().toISOString() };
   } catch (error) {
     const ref = crypto.randomUUID().slice(0, 8);
     console.error(`[dashboard] query failed ref=${ref}`, error instanceof Error ? error.message : error);
-    return { ...EMPTY, error: `Falha ao consultar o banco (ref ${ref}). Tente novamente.`, updatedAt: new Date().toISOString() };
+    return { ...EMPTY, error: `Falha ao consultar os dados (ref ${ref}). Tente novamente.`, updatedAt: new Date().toISOString() };
   }
 }

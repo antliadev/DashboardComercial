@@ -18,3 +18,5 @@ tsconfig.tsbuildinfo
 server.mjs
 build_static_snapshot.py
 REf/
+.vercel
+.env*
