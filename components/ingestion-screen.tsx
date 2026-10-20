@@ -463,7 +463,7 @@ export function IngestionScreen() {
               </div>
 
               <div>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px" }}>Observações</label>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "4px" }}>Observação</label>
                 <textarea
                   rows={2}
                   value={ctNotes}
