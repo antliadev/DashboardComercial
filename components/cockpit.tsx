@@ -13,6 +13,7 @@ import {
   sumActivities,
 } from "@/lib/metrics";
 import { neutralizeCsv } from "@/lib/validation";
+import { canonicalProspectingStatus, prospectingStatuses } from "@/lib/prospecting-status";
 import { IngestionScreen } from "@/components/ingestion-screen";
 import type { AccountRow, ActivityRow, ContactRow, HomologationRow, OpportunityRow } from "@/lib/database.types";
 
@@ -80,6 +81,7 @@ export function Cockpit({ initialData }: { initialData: Data }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [query, setQuery] = useState("");
+  const [prospectingStatus, setProspectingStatus] = useState<"todos" | (typeof prospectingStatuses)[number]>("todos");
   const [oppQuery, setOppQuery] = useState("");
   const [accountQuery, setAccountQuery] = useState("");
   const [homologationQuery, setHomologationQuery] = useState("");
@@ -96,15 +98,13 @@ export function Cockpit({ initialData }: { initialData: Data }) {
   const hq = deferredHomologationQuery.trim().toLocaleLowerCase("pt-BR");
 
   const filteredContacts = useMemo(() => {
-    const base = q
-      ? initialData.contacts.filter((row) =>
-          `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${row.owner_name ?? ""} ${row.status_raw ?? ""}`
-            .toLocaleLowerCase("pt-BR")
-            .includes(q)
-        )
-      : initialData.contacts;
-    return base;
-  }, [initialData.contacts, q]);
+    return initialData.contacts.filter((row) => {
+      const canonicalStatus = canonicalProspectingStatus(row.status_raw);
+      const matchesStatus = prospectingStatus === "todos" || canonicalStatus === prospectingStatus;
+      const searchable = `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${row.owner_name ?? ""} ${canonicalStatus} ${row.status_raw ?? ""}`;
+      return matchesStatus && (!q || searchable.toLocaleLowerCase("pt-BR").includes(q));
+    });
+  }, [initialData.contacts, prospectingStatus, q]);
 
   const filteredOpportunities = useMemo(() => {
     if (!oq) return initialData.opportunities;
@@ -450,6 +450,17 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                     setContactPage(0);
                   }}
                 />
+                <select
+                  aria-label="Filtrar por status consolidado"
+                  value={prospectingStatus}
+                  onChange={(e) => {
+                    setProspectingStatus(e.target.value as "todos" | (typeof prospectingStatuses)[number]);
+                    setContactPage(0);
+                  }}
+                >
+                  <option value="todos">Todos os status</option>
+                  {prospectingStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
                 <button
                   type="button"
                   className="button"
@@ -463,7 +474,7 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                           str((r as ContactRow).account?.canonical_name, ""),
                           str((r as ContactRow).role_title, ""),
                           str((r as ContactRow).owner_name, ""),
-                          str((r as ContactRow).status_raw, ""),
+                          canonicalProspectingStatus((r as ContactRow).status_raw),
                           str((r as ContactRow).last_contact_at, ""),
                           str((r as ContactRow).linkedin_url, ""),
                         ]),
@@ -481,7 +492,7 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                 <button type="button" className="button" disabled={safeContactPage === 0} onClick={() => setContactPage((p) => Math.max(0, p - 1))}>
                   Anterior
                 </button>
-                <span role="status">Página {safeContactPage + 1} de {contactPages} · {filteredContacts.length} resultado(s) para “{deferredQuery || "todos"}”.</span>
+                <span role="status">Página {safeContactPage + 1} de {contactPages} · {filteredContacts.length} resultado(s) para “{deferredQuery || "todos"}” · status: {prospectingStatus === "todos" ? "todos" : prospectingStatus}.</span>
                 <button type="button" className="button" disabled={safeContactPage + 1 >= contactPages} onClick={() => setContactPage((p) => p + 1)}>
                   Próxima
                 </button>
@@ -760,7 +771,7 @@ function ContactTable({ rows }: { rows: ContactRow[] }) {
               <td>{str(r.role_title)}</td>
               <td>{str(r.owner_name)}</td>
               <td>
-                <span className="pill">{str(r.status_raw, "A validar")}</span>
+                <span className="pill">{canonicalProspectingStatus(r.status_raw)}</span>
               </td>
               <td>{formatCommercialDate(r.last_contact_at)}</td>
               <td>

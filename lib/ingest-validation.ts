@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const operatorNameSchema = z.enum(["Fábio", "Leandro"]);
+export const operatorNameSchema = z.enum(["Fábio", "Leandro", "Lucas"]);
 export type OperatorName = z.infer<typeof operatorNameSchema>;
 
 export const newContactInputSchema = z.object({

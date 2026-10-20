@@ -202,6 +202,14 @@ export function IngestionScreen() {
               >
                 👤 Fábio
               </button>
+              <button
+                type="button"
+                className={`button ${operator === "Lucas" ? "primary" : ""}`}
+                style={{ flex: 1, border: "1px solid #dfe5eb" }}
+                onClick={() => setOperator("Lucas")}
+              >
+                👤 Lucas
+              </button>
             </div>
             <span style={{ display: "block", color: "var(--muted)", fontSize: "12px", marginTop: "6px" }}>
               Responsável selecionado atualmente: <strong>{operator}</strong>
@@ -668,11 +676,11 @@ export function IngestionScreen() {
 URL: https://dashboard-comercial-orcin.vercel.app/api/ingest
 Header: Content-Type: application/json
 
-Corpo (Exemplo para Fábio registrar atividades):
+Corpo (Exemplo para Lucas, Fábio ou Leandro registrar atividades):
 {
   "type": "activity",
   "payload": {
-    "operator": "Fábio",
+    "operator": "Lucas",
     "date": "${new Date().toISOString().slice(0, 10)}",
     "channel": "LinkedIn",
     "contacts": 15,
