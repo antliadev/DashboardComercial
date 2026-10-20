@@ -7,6 +7,7 @@ import {
   formatCommercialDate,
   formatCommercialDateTime,
   funnelMetrics,
+  isNegativeResponse,
   pipelineByStage,
   pipelineMetrics,
   priorityOpportunities,
@@ -81,10 +82,11 @@ export function Cockpit({ initialData }: { initialData: Data }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>(tabs[0]);
   const [query, setQuery] = useState("");
-  const [prospectingStatus, setProspectingStatus] = useState<"todos" | (typeof prospectingStatuses)[number]>("todos");
   const [oppQuery, setOppQuery] = useState("");
   const [accountQuery, setAccountQuery] = useState("");
   const [homologationQuery, setHomologationQuery] = useState("");
+  const [contactOwner, setContactOwner] = useState("");
+  const [contactStatus, setContactStatus] = useState("");
   const [contactPage, setContactPage] = useState(0);
   const [oppPage, setOppPage] = useState(0);
   const [homologationPage, setHomologationPage] = useState(0);
@@ -97,14 +99,27 @@ export function Cockpit({ initialData }: { initialData: Data }) {
   const aq = deferredAccountQuery.trim().toLocaleLowerCase("pt-BR");
   const hq = deferredHomologationQuery.trim().toLocaleLowerCase("pt-BR");
 
-  const filteredContacts = useMemo(() => {
-    return initialData.contacts.filter((row) => {
-      const canonicalStatus = canonicalProspectingStatus(row.status_raw);
-      const matchesStatus = prospectingStatus === "todos" || canonicalStatus === prospectingStatus;
-      const searchable = `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${row.owner_name ?? ""} ${canonicalStatus} ${row.status_raw ?? ""}`;
-      return matchesStatus && (!q || searchable.toLocaleLowerCase("pt-BR").includes(q));
-    });
-  }, [initialData.contacts, prospectingStatus, q]);
+  const contactOptions = useMemo(() => ({
+    owners: [...new Set(initialData.contacts.map((row) => row.owner_name?.trim() || "Sem responsável"))].sort((a, b) => a.localeCompare(b, "pt-BR")),
+    statuses: prospectingStatuses,
+  }), [initialData.contacts]);
+
+  const filteredContacts = useMemo(() => initialData.contacts.filter((row) => {
+    const owner = row.owner_name?.trim() || "Sem responsável";
+    const status = canonicalProspectingStatus(row.status_raw);
+    const matchesQuery = !q || `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${owner} ${status} ${row.status_raw ?? ""}`
+      .toLocaleLowerCase("pt-BR")
+      .includes(q);
+    return matchesQuery && (!contactOwner || owner === contactOwner) && (!contactStatus || status === contactStatus);
+  }), [contactOwner, contactStatus, initialData.contacts, q]);
+
+  const prospectingTotals = useMemo(() => ({
+    contacts: filteredContacts.length,
+    pendingInvites: filteredContacts.filter((row) => canonicalProspectingStatus(row.status_raw) === "Convite enviado").length,
+    awaitingReplies: filteredContacts.filter((row) => canonicalProspectingStatus(row.status_raw) === "Mensagem enviada").length,
+    conversations: filteredContacts.filter((row) => canonicalProspectingStatus(row.status_raw) === "Em conversa").length,
+    negativeReplies: filteredContacts.filter((row) => isNegativeResponse(row.status_raw)).length,
+  }), [filteredContacts]);
 
   const filteredOpportunities = useMemo(() => {
     if (!oq) return initialData.opportunities;
@@ -432,11 +447,11 @@ export function Cockpit({ initialData }: { initialData: Data }) {
           {tab === "Prospecção" && (
             <div role="tabpanel" id={`panel-${activeSlug}`} aria-label="Prospecção" tabIndex={0}>
               <div className="kpis">
-                <Kpi label="Contatos trabalhados" value={String(activityTotals.contacts)} />
-                <Kpi label="Convites" value={String(activityTotals.invites)} />
-                <Kpi label="Mensagens" value={String(activityTotals.messages)} />
-                <Kpi label="Respostas" value={String(activityTotals.replies)} />
-                <Kpi label="Conversas" value={String(activityTotals.conversations)} />
+                <Kpi label="Contatos" value={String(prospectingTotals.contacts)} />
+                <Kpi label="Convites aguardando aceite" value={String(prospectingTotals.pendingInvites)} />
+                <Kpi label="Aguardando resposta" value={String(prospectingTotals.awaitingReplies)} />
+                <Kpi label="Em conversa" value={String(prospectingTotals.conversations)} />
+                <Kpi label="Respostas negativas" value={String(prospectingTotals.negativeReplies)} />
               </div>
               <div className="filters">
                 <input
@@ -451,16 +466,26 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                   }}
                 />
                 <select
-                  aria-label="Filtrar por status consolidado"
-                  value={prospectingStatus}
-                  onChange={(e) => {
-                    setProspectingStatus(e.target.value as "todos" | (typeof prospectingStatuses)[number]);
-                    setContactPage(0);
-                  }}
+                  aria-label="Filtrar por responsável"
+                  value={contactOwner}
+                  onChange={(e) => { setContactOwner(e.target.value); setContactPage(0); }}
                 >
-                  <option value="todos">Todos os status</option>
-                  {prospectingStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                  <option value="">Todos os responsáveis</option>
+                  {contactOptions.owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
                 </select>
+                <select
+                  aria-label="Filtrar por status consolidado"
+                  value={contactStatus}
+                  onChange={(e) => { setContactStatus(e.target.value); setContactPage(0); }}
+                >
+                  <option value="">Todos os status</option>
+                  {contactOptions.statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+                {(query || contactOwner || contactStatus) && (
+                  <button type="button" className="button" onClick={() => { setQuery(""); setContactOwner(""); setContactStatus(""); setContactPage(0); }}>
+                    Limpar filtros
+                  </button>
+                )}
                 <button
                   type="button"
                   className="button"
@@ -492,7 +517,7 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                 <button type="button" className="button" disabled={safeContactPage === 0} onClick={() => setContactPage((p) => Math.max(0, p - 1))}>
                   Anterior
                 </button>
-                <span role="status">Página {safeContactPage + 1} de {contactPages} · {filteredContacts.length} resultado(s) para “{deferredQuery || "todos"}” · status: {prospectingStatus === "todos" ? "todos" : prospectingStatus}.</span>
+                <span role="status">Página {safeContactPage + 1} de {contactPages} · {filteredContacts.length} resultado(s) para “{deferredQuery || "todos"}”.</span>
                 <button type="button" className="button" disabled={safeContactPage + 1 >= contactPages} onClick={() => setContactPage((p) => p + 1)}>
                   Próxima
                 </button>
