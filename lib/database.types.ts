@@ -14,6 +14,7 @@ export interface ContactRow {
   status_raw: string | null;
   linkedin_url: string | null;
   last_contact_at: string | null;
+  notes: string | null;
   owner_name: string | null;
   account: { id: string; canonical_name: string } | null;
 }

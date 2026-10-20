@@ -107,7 +107,7 @@ export function Cockpit({ initialData }: { initialData: Data }) {
   const filteredContacts = useMemo(() => initialData.contacts.filter((row) => {
     const owner = row.owner_name?.trim() || "Sem responsável";
     const status = canonicalProspectingStatus(row.status_raw);
-    const matchesQuery = !q || `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${owner} ${status} ${row.status_raw ?? ""}`
+    const matchesQuery = !q || `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${owner} ${status} ${row.status_raw ?? ""} ${row.notes ?? ""}`
       .toLocaleLowerCase("pt-BR")
       .includes(q);
     return matchesQuery && (!contactOwner || owner === contactOwner) && (!contactStatus || status === contactStatus);
@@ -493,13 +493,14 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                     downloadCsv(
                       "prospeccao.csv",
                       [
-                        ["contato", "conta", "cargo", "responsavel", "status", "ultimo_contato", "linkedin"],
+                        ["contato", "conta", "cargo", "responsavel", "status", "observacao", "ultimo_contato", "linkedin"],
                         ...filteredContacts.map((r) => [
                           str((r as ContactRow).name, ""),
                           str((r as ContactRow).account?.canonical_name, ""),
                           str((r as ContactRow).role_title, ""),
                           str((r as ContactRow).owner_name, ""),
                           canonicalProspectingStatus((r as ContactRow).status_raw),
+                          str((r as ContactRow).notes, ""),
                           str((r as ContactRow).last_contact_at, ""),
                           str((r as ContactRow).linkedin_url, ""),
                         ]),
@@ -780,6 +781,7 @@ function ContactTable({ rows }: { rows: ContactRow[] }) {
           <th scope="col">Cargo</th>
           <th scope="col">Responsável</th>
           <th scope="col">Status</th>
+          <th scope="col">Observação</th>
           <th scope="col">Último contato</th>
           <th scope="col">LinkedIn</th>
         </tr>
@@ -798,6 +800,7 @@ function ContactTable({ rows }: { rows: ContactRow[] }) {
               <td>
                 <span className="pill">{canonicalProspectingStatus(r.status_raw)}</span>
               </td>
+              <td className="contactNote" title={r.notes ?? undefined}>{str(r.notes)}</td>
               <td>{formatCommercialDate(r.last_contact_at)}</td>
               <td>
                 {isSafeHttpsUrl(r.linkedin_url) ? (

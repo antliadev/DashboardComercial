@@ -112,4 +112,5 @@ header{position:static;padding:15px 18px;height:auto}
 .pager{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 2px 16px;color:var(--muted);font-size:12px}
 .filters{gap:10px;flex-wrap:wrap}
 .filters .button{border:1px solid var(--line);background:#fff;border-radius:var(--radius-sm);padding:10px 14px;font-weight:750;cursor:pointer;color:var(--ink)}
+.contactNote{max-width:280px;white-space:normal;overflow-wrap:anywhere;color:var(--muted);font-size:12px;line-height:1.4}
 thead th{position:sticky;top:0;z-index:1}

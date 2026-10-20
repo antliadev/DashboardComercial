@@ -80,6 +80,7 @@ export async function POST(request: Request) {
         status_raw: data.status,
         linkedin_url: data.linkedin || null,
         last_contact_at: data.lastDate ? new Date(data.lastDate).toISOString() : now,
+        notes: data.notes || null,
         owner_name: data.operator,
         account: {
           id: data.company,
