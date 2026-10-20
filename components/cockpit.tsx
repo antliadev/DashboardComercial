@@ -15,6 +15,7 @@ import {
 } from "@/lib/metrics";
 import { neutralizeCsv } from "@/lib/validation";
 import { canonicalProspectingStatus, prospectingStatuses } from "@/lib/prospecting-status";
+import { cleanLeadObservation } from "@/lib/lead-observation";
 import { IngestionScreen } from "@/components/ingestion-screen";
 import type { AccountRow, ActivityRow, ContactRow, HomologationRow, OpportunityRow } from "@/lib/database.types";
 
@@ -107,7 +108,8 @@ export function Cockpit({ initialData }: { initialData: Data }) {
   const filteredContacts = useMemo(() => initialData.contacts.filter((row) => {
     const owner = row.owner_name?.trim() || "Sem responsável";
     const status = canonicalProspectingStatus(row.status_raw);
-    const matchesQuery = !q || `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${owner} ${status} ${row.status_raw ?? ""} ${row.notes ?? ""}`
+    const observation = cleanLeadObservation(row.notes) ?? "";
+    const matchesQuery = !q || `${row.name ?? ""} ${row.account?.canonical_name ?? ""} ${row.role_title ?? ""} ${owner} ${status} ${row.status_raw ?? ""} ${observation}`
       .toLocaleLowerCase("pt-BR")
       .includes(q);
     return matchesQuery && (!contactOwner || owner === contactOwner) && (!contactStatus || status === contactStatus);
@@ -500,7 +502,7 @@ export function Cockpit({ initialData }: { initialData: Data }) {
                           str((r as ContactRow).role_title, ""),
                           str((r as ContactRow).owner_name, ""),
                           canonicalProspectingStatus((r as ContactRow).status_raw),
-                          str((r as ContactRow).notes, ""),
+                          cleanLeadObservation((r as ContactRow).notes) ?? "",
                           str((r as ContactRow).last_contact_at, ""),
                           str((r as ContactRow).linkedin_url, ""),
                         ]),
@@ -800,7 +802,7 @@ function ContactTable({ rows }: { rows: ContactRow[] }) {
               <td>
                 <span className="pill">{canonicalProspectingStatus(r.status_raw)}</span>
               </td>
-              <td className="contactNote" title={r.notes ?? undefined}>{str(r.notes)}</td>
+              <td className="contactNote" title={cleanLeadObservation(r.notes) ?? undefined}>{cleanLeadObservation(r.notes) ?? "—"}</td>
               <td>{formatCommercialDate(r.last_contact_at)}</td>
               <td>
                 {isSafeHttpsUrl(r.linkedin_url) ? (
