@@ -132,12 +132,13 @@ async function fetchFirestoreCollectionRest(collection: string, maxPages = 5): P
 }
 
 async function getDashboardDataFromFirestore(orgSlug: string): Promise<DashboardData | null> {
-  const [rawContacts, rawActivities] = await Promise.all([
+  const [rawContacts, rawActivities, rawHomologations] = await Promise.all([
     fetchFirestoreCollectionRest("contacts"),
     fetchFirestoreCollectionRest("activities"),
+    fetchFirestoreCollectionRest("homologations"),
   ]);
 
-  if (rawContacts.length === 0 && rawActivities.length === 0) {
+  if (rawContacts.length === 0 && rawActivities.length === 0 && rawHomologations.length === 0) {
     return null;
   }
 
@@ -167,6 +168,23 @@ async function getDashboardDataFromFirestore(orgSlug: string): Promise<Dashboard
     channel: { name: raw.channel_name ? String(raw.channel_name) : "LinkedIn" },
   }));
 
+  const homologations: HomologationRow[] = rawHomologations.map((raw) => ({
+    id: String(raw.id || ""),
+    company_name: String(raw.company_name || ""),
+    status: String(raw.status || "a_validar") as HomologationRow["status"],
+    owner_name: raw.owner_name ? String(raw.owner_name) : null,
+    supplier_portal_url: raw.supplier_portal_url ? String(raw.supplier_portal_url) : null,
+    buyer_area_contact: raw.buyer_area_contact ? String(raw.buyer_area_contact) : null,
+    last_action: raw.last_action ? String(raw.last_action) : null,
+    last_action_at: raw.last_action_at ? String(raw.last_action_at) : null,
+    next_action: raw.next_action ? String(raw.next_action) : null,
+    next_action_due_on: raw.next_action_due_on ? String(raw.next_action_due_on) : null,
+    notes: raw.notes ? String(raw.notes) : null,
+    evidence_level: String(raw.evidence_level || "pending_validation") as HomologationRow["evidence_level"],
+    updated_at: String(raw.updated_at || raw.created_at || new Date().toISOString()),
+    account: raw.account_name ? { id: String(raw.account_name), canonical_name: String(raw.account_name) } : null,
+  }));
+
   // Combinar com seed para oportunidades, contas e homologações caso ainda não populadas no Firestore
   const seed = loadSeedData();
 
@@ -175,7 +193,7 @@ async function getDashboardDataFromFirestore(orgSlug: string): Promise<Dashboard
     activities,
     opportunities: seed.opportunities,
     accounts: seed.accounts,
-    homologations: seed.homologations,
+    homologations: homologations.length > 0 ? homologations : seed.homologations,
     error: null,
     updatedAt: new Date().toISOString(),
   };
